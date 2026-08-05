@@ -39,6 +39,9 @@ jobs:
       - name: Apps Script template
         run: node test/create-sheet.mjs
 
+      - name: xlsx round trip
+        run: python3 test/xlsx_roundtrip.py
+
   deploy:
     needs: test
     runs-on: ubuntu-latest

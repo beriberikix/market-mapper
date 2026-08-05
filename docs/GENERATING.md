@@ -1,14 +1,19 @@
 # Generating a map with an LLM
 
-Two routes. Both start from the same prompt; only the requested output differs.
+Three routes. All start from the same prompt; only the requested output differs.
 
-| Route | You get | Effort |
-|---|---|---|
-| **A — CSVs** | Three files to import as tabs | 3 uploads |
-| **B — Apps Script** | The whole Sheet, built and shared, in one run | 1 paste |
+| Route | You get | Effort | Fails when |
+|---|---|---|---|
+| **A — CSVs** | Three files to import as tabs | 3 imports | You pick "replace sheet" instead of "insert new" |
+| **B — Apps Script** | The whole Sheet, built and shared, in one run | 1 paste | Never seen it fail; needs an auth prompt |
+| **C — One .xlsx** | A single file to drag into Drive | 1 upload | You forget to convert it to a Google Sheet |
 
-Route B is less work and less error-prone, because tab names and column
-headers are written by the script rather than by you.
+**B** is the least work and the least error-prone: tab names, headers and
+sharing are all written by the script rather than by you, and it validates the
+data before creating anything.
+
+**C** is the best fit if you would rather not authorize an Apps Script, or you
+want the file on disk for other reasons.
 
 ---
 
@@ -117,6 +122,70 @@ of adding one, and the tab names are what the loader matches on.
 The script creates the three tabs with correct names and headers, freezes the
 header row, sizes the columns, deletes the default `Sheet1`, and sets link
 sharing to Anyone-with-the-link/Viewer.
+
+## Route C — one .xlsx, one upload
+
+An `.xlsx` holds multiple tabs in a single file, so Drive can take the whole
+workbook in one drag. Two ways to produce it.
+
+### C1 — convert the CSVs (deterministic)
+
+Run the prompt as for Route A, save the three CSVs into a folder, then:
+
+```sh
+python3 tools/csv-to-xlsx.py path/to/csvs/ -o market-map.xlsx
+```
+
+Standard library only — no `pip install`, nothing to build. The worksheet name
+comes from each file's stem, so `Companies.csv` becomes a tab named
+`Companies`, which is what the loader matches on. Rename the files, not the
+tabs.
+
+Every cell is written as text on purpose. Type guessing is what turns a colour
+like `#3b6fd4` into something else, or reads a version-like string as a date;
+the app parses its own types out of the sheet, so leaving everything as text is
+both safer and lossless.
+
+### C2 — let the model produce the file
+
+You do not need this repo's script. If your model can run code, just ask it:
+
+````text
+Now write that data to a single .xlsx file with three worksheets.
+
+Requirements:
+  - The worksheets must be named exactly: Config, Categories, Companies
+  - Same headers and column order as the CSVs above
+  - Write every cell as text. Do not let the library coerce types — a colour
+    like #3b6fd4 and a domain like axiom.co must survive verbatim
+  - No formulas, no merged cells, no frozen panes needed
+
+Give me the file, and the script you used.
+````
+
+Models reach for `openpyxl` here, which works well but is a dependency you may
+need to install. The two things they get wrong are worth checking: worksheet
+names that drift (`Companies ` with a trailing space, or `Sheet1`), and numeric
+coercion turning `order` and `span` into floats. Both are visible in the app's
+status bar, and neither is fatal — see [Checking the result](#checking-the-result).
+
+Use C1 when you want it to be right the first time; C2 when you would rather
+not touch a terminal.
+
+### Uploading
+
+1. Drag the `.xlsx` into [drive.google.com](https://drive.google.com).
+2. **Open it, then File → Save as Google Sheets.**
+3. Share that new file: **Anyone with the link → Viewer.**
+4. Paste its URL into the app.
+
+Step 2 is the one people skip. Drive keeps an uploaded `.xlsx` as an Excel file
+in Office-compatibility mode, and the app reads sheets through Google's `gviz`
+endpoint, which serves Google Sheets — not Excel files parked in Drive. The URL
+you want is the converted copy's, not the upload's.
+
+To skip that step on future uploads, turn on **Settings → Convert uploads to
+Google Docs editor format** in Drive.
 
 ---
 

@@ -63,10 +63,14 @@ Click **Load sample** to see the format without setting up a sheet.
 [docs/GENERATING.md](docs/GENERATING.md) has a prompt that produces a valid
 sheet from a one-line market description, in either of two shapes:
 
-- **Three CSVs** to import as tabs, or
+- **Three CSVs** to import as tabs,
 - **An Apps Script** ([`tools/create-sheet.gs`](tools/create-sheet.gs)) that
   builds the whole spreadsheet in one run — three named tabs, headers, frozen
-  header row, link sharing set, and the app URL printed at the end.
+  header row, link sharing set, and the app URL printed at the end, or
+- **A single `.xlsx`** to drag into Drive, either written by the model directly
+  or converted from the CSVs with
+  [`tools/csv-to-xlsx.py`](tools/csv-to-xlsx.py) (standard library only, no
+  `pip install`).
 
 The script validates before it creates anything, so the mistakes a generated
 sheet actually makes — a category referenced but never declared, a full URL
@@ -230,8 +234,9 @@ Because both come from one layout pass, the export always matches the screen.
 ## Tests
 
 ```sh
-node test/smoke.mjs         # parsing, geometry, SVG serialization
-node test/create-sheet.mjs  # the Apps Script template
+node test/smoke.mjs                # parsing, geometry, SVG serialization
+node test/create-sheet.mjs         # the Apps Script template
+python3 test/xlsx_roundtrip.py     # the CSV -> xlsx converter
 
 # smoke.mjs also runs with no Node installed:
 /System/Library/Frameworks/JavaScriptCore.framework/Versions/A/Helpers/jsc -m test/smoke.mjs
