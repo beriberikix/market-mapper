@@ -7,6 +7,15 @@ and renders SVG you can export straight into a deck.
 The sheet is the whole interface: companies, categories, colors, and layout all
 live in tabs you edit.
 
+![The bundled sample map: 33 companies across 6 categories, logos auto-fetched
+from company domains](docs/sample.png)
+
+<sub>The bundled sample, rendered by the app and exported unretouched — click
+**Load sample** to reproduce it. Claude Code and Cursor show initials because
+the logo service returns a truncated SVG for those domains, and Coder's tile
+looks empty because its logo is white on transparent. Both are real behavior,
+covered in [Known gaps](#known-gaps).</sub>
+
 **Live instance:** https://beriberikix.github.io/market-mapper/
 
 Append `?s=<your sheet id>` to load your own map.
@@ -215,9 +224,11 @@ live SVG makes an exact export free.
 - unavatar returns whatever it can find, so logo resolution and background
   treatment vary company to company. `logo_url` is the fix for any that look
   bad in a final map.
-- Logos with white artwork and a transparent background (Fivetran, in the
-  sample) nearly vanish against the light card fill. A per-company background
-  swatch would fix it; there's no design for one yet.
+- Logos with white artwork and a transparent background vanish against the
+  light card fill — Coder's tile in the screenshot above is blank for this
+  reason, and Fivetran has the same problem in the 50-company sheet. Detecting
+  it is feasible (sample the canvas during normalization; if every opaque pixel
+  is near-white, the logo needs a dark chip behind it) but not implemented.
 - A 50-company map takes ~20s to load, almost entirely logo fetching against a
   rate limit. Sheets with `logo_url` filled in are much faster.
 - During a rate-limit backoff the progress counter stalls, which reads as a
