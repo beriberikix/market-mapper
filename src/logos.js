@@ -41,9 +41,38 @@ const MAX_CONCURRENT = 3;
 const MAX_RETRIES = 3;
 const BASE_BACKOFF_MS = 800;
 
+/**
+ * Consecutive rate-limit failures before auto-fetch gives up for this run.
+ *
+ * Once the quota is spent, every remaining request is going to 429 too, and
+ * retrying each one through the full backoff ladder turns a hopeless fetch
+ * into a two-minute stall. Observed on the hosted instance after the quota was
+ * exhausted: all 50 logos failed, and the map took ~120s to draw instead of
+ * the ~3s it takes to give up honestly.
+ */
+const BREAKER_THRESHOLD = 5;
+
 const cache = new Map();
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Per-run, so a reload always gets a fresh chance at the quota.
+ */
+function createBreaker(threshold = BREAKER_THRESHOLD) {
+  let consecutive = 0;
+  return {
+    get tripped() {
+      return consecutive >= threshold;
+    },
+    recordRateLimit() {
+      consecutive += 1;
+    },
+    recordSuccess() {
+      consecutive = 0;
+    },
+  };
+}
 
 /**
  * Runs `worker` over `items` with at most `limit` in flight. Plain async
@@ -251,12 +280,25 @@ export async function embedLogos(categories, config, onProgress) {
   }
 
   let done = 0;
+  let abandoned = 0;
   const failed = [];
   const reasons = { rateLimited: 0, invalid: 0, other: 0 };
+  const breaker = createBreaker();
 
   await pool(jobs, MAX_CONCURRENT, async ({ company, src }) => {
+    // The quota is spent; stop paying the backoff cost for a certain failure.
+    if (breaker.tripped) {
+      reasons.rateLimited += 1;
+      abandoned += 1;
+      failed.push(company.name);
+      done += 1;
+      onProgress?.(done, jobs.length);
+      return;
+    }
+
     try {
       company.logoData = await toDataUri(src);
+      breaker.recordSuccess();
     } catch (err) {
       // Every failure is a text chip rather than a broken map, but the causes
       // need different fixes, so they are counted separately.
@@ -265,9 +307,15 @@ export async function embedLogos(categories, config, onProgress) {
       //   invalid     - the bytes are not a usable image. Observed in the
       //                 wild: unavatar served a truncated SVG (no closing
       //                 tag) for some domains. Only logo_url fixes it.
-      if (/\b429\b/.test(err.message)) reasons.rateLimited += 1;
-      else if (/decode|rasterize|not an image/i.test(err.message)) reasons.invalid += 1;
-      else reasons.other += 1;
+      if (/\b429\b/.test(err.message)) {
+        reasons.rateLimited += 1;
+        breaker.recordRateLimit();
+      } else if (/decode|rasterize|not an image/i.test(err.message)) {
+        reasons.invalid += 1;
+        breaker.recordSuccess(); // a bad image says nothing about the quota
+      } else {
+        reasons.other += 1;
+      }
 
       failed.push(company.name);
     } finally {
@@ -276,7 +324,7 @@ export async function embedLogos(categories, config, onProgress) {
     }
   });
 
-  return { failed, reasons };
+  return { failed, reasons, abandoned };
 }
 
 /**

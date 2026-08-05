@@ -83,7 +83,12 @@ function reportResult({ sourceLabel, total, categories, logoResult, model }) {
 
     // Both end as a text chip, but only one of them is worth waiting out.
     if (reasons.rateLimited) {
-      causes.push(`${reasons.rateLimited} hit the logo service's rate limit (reloading may pick these up)`);
+      causes.push(
+        `${reasons.rateLimited} hit the logo service's rate limit` +
+        (logoResult.abandoned
+          ? ` (gave up early after repeated limits — try again in a few minutes)`
+          : ` (reloading may pick these up)`)
+      );
     }
     if (reasons.invalid) {
       causes.push(`${reasons.invalid} returned an unusable image`);
