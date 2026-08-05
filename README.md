@@ -28,6 +28,19 @@ This repo deploys itself to GitHub Pages on every push to `main` via
 `.github/workflows/deploy.yml`. The smoke test gates the deploy, and the
 upload step publishes the repository as-is — no bundler, no install step.
 
+**After a deploy, give it 10 minutes or hard-reload.** GitHub Pages serves
+`cache-control: max-age=600`, and since the app loads unversioned ES modules a
+normal refresh will keep running the previous `src/*.js` for up to ten minutes.
+This is easy to mistake for a fix not working — it cost a debugging cycle
+during development. To force fresh modules from the console:
+
+```js
+for (const f of ['src/main.js','src/logos.js','src/schema.js','src/layout.js',
+                 'src/render.js','src/export.js','src/sheets.js'])
+  await fetch(f, {cache: 'reload'});
+location.reload();
+```
+
 Click **Load sample** to see the format without setting up a sheet.
 
 ## Pointing it at a sheet
@@ -136,6 +149,11 @@ Measured against this repo's 50-company sample sheet, in Chrome:
 
 The status bar reports the split, since only the rate-limited ones are worth
 reloading for. **For a map that's actually going in a deck, fill in `logo_url`.**
+
+When the quota is fully spent, a circuit breaker abandons auto-fetch after 8
+rate-limit failures rather than walking every remaining company through the
+backoff ladder. Measured on the hosted instance: 147s to draw before the
+breaker, 33s after. The breaker is per-run, so a reload always retries.
 
 Google's `s2/favicons` is the obvious choice for step 2 and is deliberately
 **not** used: it serves images fine but sends no `Access-Control-Allow-Origin`
