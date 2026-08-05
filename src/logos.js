@@ -42,15 +42,19 @@ const MAX_RETRIES = 3;
 const BASE_BACKOFF_MS = 800;
 
 /**
- * Consecutive rate-limit failures before auto-fetch gives up for this run.
+ * Total rate-limit failures before auto-fetch gives up for this run.
  *
- * Once the quota is spent, every remaining request is going to 429 too, and
- * retrying each one through the full backoff ladder turns a hopeless fetch
- * into a two-minute stall. Observed on the hosted instance after the quota was
- * exhausted: all 50 logos failed, and the map took ~120s to draw instead of
- * the ~3s it takes to give up honestly.
+ * Counted cumulatively, not consecutively. A consecutive counter looks like
+ * the obvious choice and does not work: with several requests in flight, the
+ * occasional success resets it and the breaker never trips. Measured on the
+ * hosted instance with a spent quota -- a consecutive breaker still took 120s
+ * to reach 43 of 50 logos.
+ *
+ * Cumulative is also the better signal for what is actually happening. A 429
+ * here is a quota, not a blip: once some requests are being refused, the rest
+ * will be too, and each one costs the full backoff ladder before failing.
  */
-const BREAKER_THRESHOLD = 5;
+const BREAKER_THRESHOLD = 8;
 
 const cache = new Map();
 
@@ -60,16 +64,13 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
  * Per-run, so a reload always gets a fresh chance at the quota.
  */
 function createBreaker(threshold = BREAKER_THRESHOLD) {
-  let consecutive = 0;
+  let rateLimited = 0;
   return {
     get tripped() {
-      return consecutive >= threshold;
+      return rateLimited >= threshold;
     },
     recordRateLimit() {
-      consecutive += 1;
-    },
-    recordSuccess() {
-      consecutive = 0;
+      rateLimited += 1;
     },
   };
 }
@@ -298,7 +299,6 @@ export async function embedLogos(categories, config, onProgress) {
 
     try {
       company.logoData = await toDataUri(src);
-      breaker.recordSuccess();
     } catch (err) {
       // Every failure is a text chip rather than a broken map, but the causes
       // need different fixes, so they are counted separately.
@@ -311,8 +311,9 @@ export async function embedLogos(categories, config, onProgress) {
         reasons.rateLimited += 1;
         breaker.recordRateLimit();
       } else if (/decode|rasterize|not an image/i.test(err.message)) {
+        // A corrupt payload says nothing about the quota, so it is not
+        // counted toward the breaker.
         reasons.invalid += 1;
-        breaker.recordSuccess(); // a bad image says nothing about the quota
       } else {
         reasons.other += 1;
       }
