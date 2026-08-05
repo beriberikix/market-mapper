@@ -7,6 +7,7 @@
  */
 
 import { initials } from './logos.js';
+import { hexToRgb, luminance } from './schema.js';
 
 const XMLNS = 'http://www.w3.org/2000/svg';
 
@@ -23,15 +24,9 @@ function esc(s) {
  * the author picked.
  */
 function textOn(bg) {
-  const hex = String(bg).replace('#', '');
-  const full = hex.length === 3 ? hex.split('').map((c) => c + c).join('') : hex;
-  if (full.length !== 6) return '#ffffff';
-
-  const [r, g, b] = [0, 2, 4].map((i) => parseInt(full.slice(i, i + 2), 16) / 255);
-  const lin = (c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
-  const L = 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
-
-  return L > 0.45 ? '#14161c' : '#ffffff';
+  const rgb = hexToRgb(bg);
+  if (!rgb) return '#ffffff';
+  return luminance(rgb) > 0.45 ? '#14161c' : '#ffffff';
 }
 
 function renderCell(cell, config) {
@@ -46,6 +41,20 @@ function renderCell(cell, config) {
   );
 
   if (company.logoData) {
+    // White-on-transparent artwork is invisible on a light card, so it gets a
+    // dark plate behind it. Flagged during logo normalization, where the
+    // pixels are already on a canvas.
+    if (company.logoLight) {
+      const pad = 5;
+      parts.push(
+        `<rect x="${(logo.x - logo.maxW / 2 - pad).toFixed(1)}" ` +
+        `y="${(logo.y - pad).toFixed(1)}" ` +
+        `width="${(logo.maxW + pad * 2).toFixed(1)}" ` +
+        `height="${logo.maxH + pad * 2}" rx="6" ` +
+        `fill="${esc(config.logo_backdrop)}"/>`
+      );
+    }
+
     parts.push(
       `<image x="${(logo.x - logo.maxW / 2).toFixed(1)}" y="${logo.y.toFixed(1)}" ` +
       `width="${logo.maxW.toFixed(1)}" height="${logo.maxH}" ` +

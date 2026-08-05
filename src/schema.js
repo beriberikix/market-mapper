@@ -18,6 +18,7 @@ export const DEFAULTS = {
   text_color: '#14161c',
   muted_color: '#6b7280',
   card_color: '#f4f5f8',
+  logo_backdrop: '#2f333d',
   font: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
   logo_service: 'unavatar',
   show_names: true,
@@ -29,6 +30,32 @@ export const PALETTE = [
   '#3b6fd4', '#c2543c', '#2f8f6b', '#8a5cb8',
   '#c98a1e', '#3d8ba8', '#a34a72', '#5b7030',
 ];
+
+/**
+ * Colour helpers, shared by the renderer (header contrast) and the logo
+ * pipeline (is this artwork visible against the card it sits on).
+ */
+export function hexToRgb(hex) {
+  const raw = String(hex).replace('#', '').trim();
+  const full = raw.length === 3 ? raw.split('').map((c) => c + c).join('') : raw;
+  if (!/^[0-9a-f]{6}$/i.test(full)) return null;
+  return [0, 2, 4].map((i) => parseInt(full.slice(i, i + 2), 16));
+}
+
+/** WCAG relative luminance. */
+export function luminance([r, g, b]) {
+  const channel = (c) => {
+    const v = c / 255;
+    return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+}
+
+/** WCAG contrast ratio between two luminances, 1 (identical) to 21. */
+export function contrastRatio(a, b) {
+  const [hi, lo] = a > b ? [a, b] : [b, a];
+  return (hi + 0.05) / (lo + 0.05);
+}
 
 const TRUTHY = new Set(['true', 'yes', 'y', '1', 'on']);
 const FALSY = new Set(['false', 'no', 'n', '0', 'off']);

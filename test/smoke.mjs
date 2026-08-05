@@ -57,7 +57,7 @@ globalThis.document = {
   }),
 };
 
-const { buildModel, DEFAULTS } = await import('../src/schema.js');
+const { buildModel, DEFAULTS, hexToRgb, luminance, contrastRatio } = await import('../src/schema.js');
 const { computeLayout } = await import('../src/layout.js');
 const { renderSvgMarkup } = await import('../src/render.js');
 const { SAMPLE } = await import('../src/sample.js');
@@ -247,6 +247,61 @@ check('header text flips to stay legible on light category colors', () => {
 check('companies without logos fall back to initials', () => {
   assert.ok(svg.includes('>GH<') || svg.includes('>GC<'),
     'expected initial chips for logo-less companies');
+});
+
+check('a light logo gets a dark backdrop, a normal one does not', () => {
+  const build = (light) => {
+    const m = buildModel({
+      config: null,
+      categories: null,
+      companies: [{ company: 'Pale Co', category: 'X' }],
+    });
+    const c = m.categories[0].companies[0];
+    c.logoData = 'data:image/png;base64,AAAA';
+    c.logoLight = light;
+    return renderSvgMarkup(computeLayout(m));
+  };
+
+  const backdrop = DEFAULTS.logo_backdrop;
+  assert.ok(build(true).includes(`fill="${backdrop}"`), 'light logo should get a backdrop');
+  assert.ok(!build(false).includes(`fill="${backdrop}"`), 'normal logo should not');
+});
+
+check('the backdrop sits behind the logo, not in front of it', () => {
+  const m = buildModel({
+    config: null,
+    categories: null,
+    companies: [{ company: 'Pale Co', category: 'X' }],
+  });
+  const c = m.categories[0].companies[0];
+  c.logoData = 'data:image/png;base64,AAAA';
+  c.logoLight = true;
+
+  const out = renderSvgMarkup(computeLayout(m));
+  const backdropAt = out.indexOf(`fill="${DEFAULTS.logo_backdrop}"`);
+  const imageAt = out.indexOf('<image');
+
+  assert.ok(backdropAt !== -1 && imageAt !== -1, 'both elements should be present');
+  assert.ok(backdropAt < imageAt,
+    'SVG paints in document order, so the backdrop must come first');
+});
+
+check('contrast helpers agree with known values', () => {
+  assert.deepEqual(hexToRgb('#f4f5f8'), [244, 245, 248]);
+  assert.deepEqual(hexToRgb('fff'), [255, 255, 255]);
+  assert.equal(hexToRgb('nonsense'), null);
+
+  assert.ok(Math.abs(luminance([255, 255, 255]) - 1) < 1e-9, 'white is 1.0');
+  assert.ok(luminance([0, 0, 0]) === 0, 'black is 0.0');
+
+  // White on black is the maximum WCAG ratio, 21:1.
+  const extreme = contrastRatio(luminance([255, 255, 255]), luminance([0, 0, 0]));
+  assert.ok(Math.abs(extreme - 21) < 0.01, `expected 21, got ${extreme}`);
+
+  // A white logo against the default card is nowhere near the visible
+  // threshold -- this is the Fivetran case the backdrop exists for.
+  const white = contrastRatio(luminance([255, 255, 255]), luminance([244, 245, 248]));
+  assert.ok(white < 1.25, `white-on-card should read as invisible, got ${white}`);
 });
 
 // Write the rendered sample out so it can be eyeballed in a browser. Only

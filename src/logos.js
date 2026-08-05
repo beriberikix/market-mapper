@@ -13,6 +13,8 @@
  * a remote <image href> in an SVG silently blanks the canvas on export.
  */
 
+import { contrastRatio, hexToRgb, luminance } from './schema.js';
+
 /**
  * Auto-fetch services, keyed by the `logo_service` config value.
  *
@@ -131,6 +133,23 @@ function sourceFor(company, service) {
 /** Longest edge of a normalized logo. Drawn at ~40px, exported at 2x. */
 const LOGO_PX = 128;
 
+/**
+ * A pixel counts as "visible" if it clears this contrast ratio against the
+ * card it is drawn on. 1.25 is well below any accessibility threshold on
+ * purpose -- the question is not "is this readable" but "is this there at all".
+ */
+const VISIBLE_CONTRAST = 1.25;
+
+/**
+ * Fraction of the image that must be visible for the logo to be usable as-is.
+ *
+ * Measured across 46 real logos: the two broken ones scored 0.000, and the
+ * next-worst usable logo scored 0.180. Anywhere in that gap works; 0.02 is
+ * chosen near the bottom of it so a legitimately sparse logo is never
+ * mistaken for an invisible one.
+ */
+const MIN_VISIBLE_FRACTION = 0.02;
+
 function readAsDataUri(blob) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -207,7 +226,48 @@ function decode(dataUri) {
  *
  * Data URIs never taint the canvas, so the export path stays clean.
  */
-async function normalize(dataUri, isVector) {
+/**
+ * Decide whether the artwork is actually going to show up.
+ *
+ * Two failures look identical to the user -- an empty tile -- but need
+ * different responses, so they are separated here:
+ *
+ *   blank  no pixel has any alpha at all. Services do return these: unavatar
+ *          served a fully transparent 128x128 PNG for one domain in the
+ *          sample. There is nothing to draw, so the caller falls back to a
+ *          text chip.
+ *   light  the artwork is opaque but has no contrast against the card, i.e. a
+ *          white logo on a light tile. There IS something to draw; it just
+ *          needs a dark backdrop behind it.
+ */
+function assess(ctx, width, height, card) {
+  const { data } = ctx.getImageData(0, 0, width, height);
+
+  let opaque = 0;
+  let visible = 0;
+
+  for (let i = 0; i < data.length; i += 4) {
+    const alpha = data[i + 3] / 255;
+    if (alpha === 0) continue;
+    opaque += 1;
+
+    // Composite over the card, which is what the viewer actually sees.
+    const composited = [0, 1, 2].map(
+      (c) => data[i + c] * alpha + card.rgb[c] * (1 - alpha)
+    );
+    if (contrastRatio(luminance(composited), card.luminance) >= VISIBLE_CONTRAST) {
+      visible += 1;
+    }
+  }
+
+  const total = width * height;
+  return {
+    blank: opaque === 0,
+    light: visible / total < MIN_VISIBLE_FRACTION,
+  };
+}
+
+async function normalize(dataUri, isVector, card) {
   const img = await decode(isVector ? sizeSvg(dataUri) : dataUri);
 
   const w = img.naturalWidth || LOGO_PX;
@@ -223,15 +283,21 @@ async function normalize(dataUri, isVector) {
   canvas.width = Math.max(1, Math.round(w * scale));
   canvas.height = Math.max(1, Math.round(h * scale));
 
-  const ctx = canvas.getContext('2d');
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
   ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-  return canvas.toDataURL('image/png');
+  const { blank, light } = assess(ctx, canvas.width, canvas.height, card);
+  if (blank) throw new Error('blank image');
+
+  return { uri: canvas.toDataURL('image/png'), light };
 }
 
-async function toDataUri(url) {
-  if (cache.has(url)) return cache.get(url);
+async function toDataUri(url, card) {
+  // The card colour participates in the light/blank assessment, so it belongs
+  // in the cache key.
+  const key = `${card.hex}|${url}`;
+  if (cache.has(key)) return cache.get(key);
 
   const promise = (async () => {
     let raw = url;
@@ -248,17 +314,21 @@ async function toDataUri(url) {
     }
 
     try {
-      return await normalize(raw, /svg/i.test(type));
-    } catch {
+      return await normalize(raw, /svg/i.test(type), card);
+    } catch (err) {
+      // A blank image is a definite verdict, not a re-encoding hiccup -- there
+      // is genuinely nothing to draw, so never fall through to the original.
+      if (/blank/.test(err.message)) throw err;
+
       // If re-encoding fails, the original is still better than nothing --
       // unless it is a format the renderer may not draw, where a text chip is
       // the more honest outcome.
       if (/svg|icon/i.test(type)) throw new Error(`could not rasterize ${type}`);
-      return raw;
+      return { uri: raw, light: false };
     }
   })();
 
-  cache.set(url, promise);
+  cache.set(key, promise);
   return promise;
 }
 
@@ -270,6 +340,9 @@ async function toDataUri(url) {
  * can tell the author which rows to fix.
  */
 export async function embedLogos(categories, config, onProgress) {
+  const rgb = hexToRgb(config.card_color) || [255, 255, 255];
+  const card = { hex: config.card_color, rgb, luminance: luminance(rgb) };
+
   const jobs = [];
 
   for (const category of categories) {
@@ -298,7 +371,9 @@ export async function embedLogos(categories, config, onProgress) {
     }
 
     try {
-      company.logoData = await toDataUri(src);
+      const { uri, light } = await toDataUri(src, card);
+      company.logoData = uri;
+      company.logoLight = light;
     } catch (err) {
       // Every failure is a text chip rather than a broken map, but the causes
       // need different fixes, so they are counted separately.
@@ -310,9 +385,9 @@ export async function embedLogos(categories, config, onProgress) {
       if (/\b429\b/.test(err.message)) {
         reasons.rateLimited += 1;
         breaker.recordRateLimit();
-      } else if (/decode|rasterize|not an image/i.test(err.message)) {
-        // A corrupt payload says nothing about the quota, so it is not
-        // counted toward the breaker.
+      } else if (/decode|rasterize|not an image|blank/i.test(err.message)) {
+        // A corrupt or empty payload says nothing about the quota, so it is
+        // not counted toward the breaker.
         reasons.invalid += 1;
       } else {
         reasons.other += 1;

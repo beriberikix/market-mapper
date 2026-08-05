@@ -10,11 +10,11 @@ live in tabs you edit.
 ![The bundled sample map: 33 companies across 6 categories, logos auto-fetched
 from company domains](docs/sample.png)
 
-<sub>The bundled sample, rendered by the app and exported unretouched — click
-**Load sample** to reproduce it. Claude Code and Cursor show initials because
-the logo service returns a truncated SVG for those domains, and Coder's tile
-looks empty because its logo is white on transparent. Both are real behavior,
-covered in [Known gaps](#known-gaps).</sub>
+<sub>The bundled sample, captured from the running app and exported unretouched
+— click **Load sample** to reproduce it. Three companies show initials rather
+than a logo: the service returns a truncated SVG for Claude Code and Cursor,
+and a fully transparent image for Coder. That is real behavior, not a rendering
+bug — see [Logos](#logos).</sub>
 
 **Live instance:** https://beriberikix.github.io/market-mapper/
 
@@ -121,6 +121,7 @@ Key/value rows, two columns headed `key` and `value`:
 | `text_color` | `#14161c` | |
 | `muted_color` | `#6b7280` | |
 | `card_color` | `#f4f5f8` | Company tile fill. |
+| `logo_backdrop` | `#2f333d` | Plate drawn behind logos that would otherwise be invisible on the card. |
 | `font` | system stack | Any CSS font-family value. |
 | `logo_service` | `unavatar` | `none` disables auto-fetch. |
 | `show_names` | `TRUE` | `FALSE` for a logos-only map. |
@@ -142,6 +143,32 @@ return a grab-bag of formats — measured across 49 domains: 31 png, 6 ico,
 3 svg, 1 jpeg — and an `<image>` pointing at an SVG or ICO data URI is a nested
 document that some renderers silently refuse to draw. Normalizing means the
 emitted SVG only ever contains PNG.
+
+### Logos that would be invisible
+
+While the logo is on the canvas, its pixels are checked against the card colour
+it will sit on. Two failures look identical to a reader — an empty tile — but
+need opposite responses:
+
+| Condition | Response |
+|---|---|
+| No pixel has any alpha at all | Nothing to draw → initials chip |
+| Opaque, but no pixel clears 1.25:1 contrast against the card | Draw it on a dark plate (`logo_backdrop`) |
+
+Both are real: unavatar returns a fully transparent PNG for `coder.com`, and a
+pure-white logo for `fivetran.com`. Before this check, both rendered as blank
+tiles that looked like bugs.
+
+The threshold is a measurement, not a guess. Across 46 real logos the two
+broken ones scored a visible-pixel fraction of exactly 0.000 and the
+next-worst usable logo scored 0.180, so the 0.02 cutoff sits in a wide empty
+gap. Verified against the 50-company sheet: one backdrop, on Fivetran, and no
+false positives.
+
+A colour-extraction library (Color Thief, node-vibrant, Fast Average Color)
+would also answer this, but they solve the harder problem of *what colour is
+this image*. The question here is only *does anything contrast with the card*,
+which is a dozen lines over `getImageData` and keeps the repo dependency-free.
 
 ### What to expect from auto-fetch
 
@@ -224,11 +251,9 @@ live SVG makes an exact export free.
 - unavatar returns whatever it can find, so logo resolution and background
   treatment vary company to company. `logo_url` is the fix for any that look
   bad in a final map.
-- Logos with white artwork and a transparent background vanish against the
-  light card fill — Coder's tile in the screenshot above is blank for this
-  reason, and Fivetran has the same problem in the 50-company sheet. Detecting
-  it is feasible (sample the canvas during normalization; if every opaque pixel
-  is near-white, the logo needs a dark chip behind it) but not implemented.
+- The invisible-logo check is binary: a logo is either given a dark plate or
+  left alone. A logo that is merely low-contrast rather than pure white gets
+  nothing, and mid-tone logos on a mid-tone card are not considered at all.
 - A 50-company map takes ~20s to load, almost entirely logo fetching against a
   rate limit. Sheets with `logo_url` filled in are much faster.
 - During a rate-limit backoff the progress counter stalls, which reads as a
