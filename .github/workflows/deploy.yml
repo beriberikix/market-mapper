@@ -34,6 +34,11 @@ jobs:
       - name: Smoke test
         run: node test/smoke.mjs
 
+      # tools/create-sheet.gs only ever runs inside Google's runtime, in
+      # someone else's account. This is the only place it gets exercised.
+      - name: Apps Script template
+        run: node test/create-sheet.mjs
+
   deploy:
     needs: test
     runs-on: ubuntu-latest

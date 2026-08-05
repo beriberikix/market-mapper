@@ -58,6 +58,21 @@ Click **Load sample** to see the format without setting up a sheet.
    Google's `gviz` endpoint, so no API key and no Publish-to-web step.
 2. Paste the sheet ID or its full URL into the input and hit Load.
 
+### Starting from scratch with an LLM
+
+[docs/GENERATING.md](docs/GENERATING.md) has a prompt that produces a valid
+sheet from a one-line market description, in either of two shapes:
+
+- **Three CSVs** to import as tabs, or
+- **An Apps Script** ([`tools/create-sheet.gs`](tools/create-sheet.gs)) that
+  builds the whole spreadsheet in one run — three named tabs, headers, frozen
+  header row, link sharing set, and the app URL printed at the end.
+
+The script validates before it creates anything, so the mistakes a generated
+sheet actually makes — a category referenced but never declared, a full URL
+where a bare domain belongs, a colour that isn't a colour — surface as a list
+to fix rather than a broken map. A failed run leaves nothing behind in Drive.
+
 ### Starting from the sample CSVs
 
 `sample/` holds a ready-made 50-company map — one CSV per tab.
@@ -215,12 +230,18 @@ Because both come from one layout pass, the export always matches the screen.
 ## Tests
 
 ```sh
-node test/smoke.mjs
-# or, with no Node installed:
+node test/smoke.mjs         # parsing, geometry, SVG serialization
+node test/create-sheet.mjs  # the Apps Script template
+
+# smoke.mjs also runs with no Node installed:
 /System/Library/Frameworks/JavaScriptCore.framework/Versions/A/Helpers/jsc -m test/smoke.mjs
 ```
 
-20 checks over parsing, geometry, and serialization — including that no company
+`create-sheet.mjs` runs `tools/create-sheet.gs` against stand-ins for the Apps
+Script globals. That file otherwise only executes inside Google's runtime in
+someone else's account, so this is the only place a bug in it gets caught.
+
+23 checks over parsing, geometry, and serialization — including that no company
 is ever silently dropped, that category boxes never overlap or escape the
 canvas, and that XML is properly escaped. Deliberately free of `node:` builtins
 so it runs on a bare JS engine; this repo has no toolchain.
