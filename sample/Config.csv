@@ -1,0 +1,14 @@
+key,value
+title,Developer Tooling Landscape
+subtitle,Companies building for engineering teams
+date,Q3 2026
+footer,Illustrative sample data — not a real market map.
+columns,3
+width,1600
+min_cell_width,132
+background,#ffffff
+text_color,#14161c
+muted_color,#6b7280
+card_color,#f4f5f8
+logo_service,unavatar
+show_names,TRUE

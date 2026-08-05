@@ -1,0 +1,5 @@
+# Rendered by the smoke test for eyeballing; not source.
+test/output.svg
+
+.DS_Store
+node_modules/

@@ -1,0 +1,9 @@
+category,color,description,order,span
+Source Control & Review,#3b6fd4,Where code lands,1,1
+CI / CD,#c2543c,"Build, test, ship",2,1
+Observability,#2f8f6b,Knowing what broke,3,1
+Developer Environments,#8a5cb8,Where engineers actually work,4,1
+Security & Compliance,#c98a1e,Shift-left and audit,5,1
+Data & Analytics Tooling,#a34a72,Pipelines and warehouses,6,1
+AI Coding Assistants,#3d8ba8,The fastest-moving segment,7,2
+Package & Artifact Registries,#5b7030,Dependency distribution,8,1

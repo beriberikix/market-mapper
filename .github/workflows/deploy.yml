@@ -1,0 +1,55 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Allow the deploy job to mint a Pages OIDC token. Nothing here needs write
+# access to repository contents.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never run two deploys at once, but let a queued deploy finish rather than
+# cancelling it -- a cancelled deploy can leave Pages serving a half-updated
+# site.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # The app has no dependencies and no build step, so there is nothing to
+      # install -- the smoke test runs directly against the source.
+      - name: Smoke test
+        run: node test/smoke.mjs
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/configure-pages@v5
+
+      # Uploads the repository as-is. index.html, styles.css and src/ are
+      # exactly what the browser needs; there is no bundling step to go wrong.
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

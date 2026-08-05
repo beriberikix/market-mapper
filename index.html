@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Market Mapper</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="toolbar">
+    <div class="toolbar__brand">Market&nbsp;Mapper</div>
+
+    <div class="toolbar__field">
+      <input id="sheet-input" type="text" spellcheck="false"
+             placeholder="Google Sheet ID or full URL">
+      <button id="load-btn" type="button">Load</button>
+    </div>
+
+    <div class="toolbar__actions">
+      <button id="export-svg" type="button" disabled>Export SVG</button>
+      <button id="export-png" type="button" disabled>Export PNG</button>
+      <button id="sample-btn" type="button">Load sample</button>
+    </div>
+  </header>
+
+  <div id="status" class="status" role="status" aria-live="polite"></div>
+
+  <main id="stage" class="stage">
+    <div class="empty">
+      <h1>No map loaded</h1>
+      <p>
+        Paste a Google Sheet ID above, or
+        <button class="linkish" id="sample-link" type="button">load the sample</button>
+        to see the format.
+      </p>
+      <p class="empty__hint">
+        The sheet must be shared as <strong>Anyone with the link &rarr; Viewer</strong>.
+        See <code>README.md</code> for the tab schema.
+      </p>
+    </div>
+  </main>
+
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
